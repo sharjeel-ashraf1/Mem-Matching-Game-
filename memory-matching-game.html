@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Memory Matching Game</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+      background: #f0f0f0;
+    }
+
+    #gameHeader {
+      margin-bottom: 20px;
+    }
+
+    #gameBoard {
+      width: 400px;
+      display: flex;
+      flex-wrap: wrap;
+      margin: 0 auto 20px auto;
+    }
+
+    .card {
+      width: 80px;
+      height: 80px;
+      margin: 5px;
+      background-color: #333;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 40px;
+      color: #333;
+      cursor: pointer;
+      border-radius: 8px;
+      user-select: none;
+    }
+
+    .card.flipped {
+      background-color: #fff;
+    }
+
+    .card.matched {
+      background-color: #c8f7c5;
+      cursor: default;
+    }
+
+    #winMessage {
+      display: none;
+      font-size: 28px;
+      color: green;
+      font-weight: bold;
+      margin-top: 20px;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="gameHeader">
+    <h2>Memory Matching Game</h2>
+    <p>Moves: <span id="moves">0</span></p>
+    <p>Time: <span id="timer">0</span> seconds</p>
+  </div>
+
+  <div id="gameBoard"></div>
+
+  <button id="restartBtn">Restart</button>
+
+  <div id="winMessage">
+    <h2>You Win! 🎉</h2>
+  </div>
+
+  <script>
+    $(function () {
+
+      var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+      function playSound(frequency, duration, type) {
+        var oscillator = audioCtx.createOscillator();
+        var gainNode   = audioCtx.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        oscillator.type = type || 'sine';
+        oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+        gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+
+        oscillator.start(audioCtx.currentTime);
+        oscillator.stop(audioCtx.currentTime + duration);
+      }
+
+      function playMatchSound() {
+        playSound(523, 0.15);
+        setTimeout(function() { playSound(659, 0.15); }, 150); // E
+        setTimeout(function() { playSound(784, 0.3);  }, 300); // G
+      }
+
+      function playWrongSound() {
+        playSound(200, 0.15, 'sawtooth');
+        setTimeout(function() { playSound(150, 0.2, 'sawtooth'); }, 150);
+      }
+
+      var symbols = ['🍎','🍎','🍕','🍕','🚗','🚗','🎸','🎸','🐶','🐶','⭐','⭐','🎯','🎯','💡','💡'];
+      var flipped = [];
+      var locked = false;
+      var moves = 0;
+      var matchedPairs = 0;
+      var timerSeconds = 0;
+      var timerInterval = null;
+      var timerStarted = false;
+
+      function shuffle(arr) {
+        for (var i = arr.length - 1; i > 0; i--) {
+          var j = Math.floor(Math.random() * (i + 1));
+          var temp = arr[i];
+          arr[i] = arr[j];
+          arr[j] = temp;
+        }
+        return arr;
+      }
+
+      function buildBoard() {
+        flipped = [];
+        locked = false;
+        moves = 0;
+        matchedPairs = 0;
+        timerSeconds = 0;
+        timerStarted = false;
+        clearInterval(timerInterval);
+
+        $('#moves').text(0);
+        $('#timer').text(0);
+        $('#winMessage').hide();
+        $('#gameBoard').empty();
+
+        var shuffled = shuffle(symbols.slice());
+
+        $.each(shuffled, function (index, symbol) {
+          var $card = $('<div class="card"></div>');
+          $card.attr('data-symbol', symbol);
+          $card.attr('data-index', index);
+          $('#gameBoard').append($card);
+        });
+      }
+
+      function startTimer() {
+        timerInterval = setInterval(function () {
+          timerSeconds++;
+          $('#timer').text(timerSeconds);
+        }, 1000);
+      }
+
+      $(document).on('click', '.card', function () {
+        var $card = $(this);
+
+        if (locked) return;
+        if ($card.hasClass('flipped')) return;
+        if ($card.hasClass('matched')) return;
+
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        if (!timerStarted) {
+          timerStarted = true;
+          startTimer();
+        }
+
+        $card.addClass('flipped');
+        $card.text($card.data('symbol'));
+        flipped.push($card);
+
+        if (flipped.length === 2) {
+          locked = true;
+          moves++;
+          $('#moves').text(moves);
+          checkMatch();
+        }
+      });
+
+      function checkMatch() {
+        var $first  = flipped[0];
+        var $second = flipped[1];
+
+        if ($first.data('symbol') === $second.data('symbol')) {
+          
+          $first.addClass('matched');
+          $second.addClass('matched');
+          playMatchSound();
+          matchedPairs++;
+          flipped = [];
+          locked = false;
+
+          if (matchedPairs === symbols.length / 2) {
+            clearInterval(timerInterval);
+            $('#winMessage').fadeIn();
+          }
+
+        } else {
+          playWrongSound();
+          setTimeout(function () {
+            $first.removeClass('flipped').text('');
+            $second.removeClass('flipped').text('');
+            flipped = [];
+            locked = false;
+          }, 1000);
+        }
+      }
+
+      $('#restartBtn').on('click', function () {
+        buildBoard();
+      });
+
+      buildBoard();
+
+    });
+  </script>
+
+</body>
+</html>
